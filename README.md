@@ -1,6 +1,6 @@
 # Health Data Processing Project
 
-This project processes and exports health data from a JSON file, specifically designed for the file "HealthAutoExport-2024-08-01-2024-09-07.json".
+This project processes export files from https://www.healthyapps.dev/.
 
 ## Project Structure
 
