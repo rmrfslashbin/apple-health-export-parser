@@ -19,8 +19,28 @@ type config struct {
 	version    bool
 }
 
+// Validate returns error if config is invalid
+func (c *config) Validate() error {
+	if c.sourceFile == "" {
+		return fmt.Errorf("source file is required")
+	}
+	return nil
+}
+
+// Add input validation for exportDir
+func (c *config) validateExportDir() error {
+	if c.exportDir == "" {
+		return fmt.Errorf("export directory cannot be empty")
+	}
+	// Check if directory exists
+	if _, err := os.Stat(c.exportDir); os.IsNotExist(err) {
+		return fmt.Errorf("export directory %s does not exist", c.exportDir)
+	}
+	return nil
+}
+
 // parseFlags parses command-line flags and returns a config struct
-func parseFlags() *config {
+func parseFlags() (*config, error) {
 	cfg := &config{}
 
 	// Define flags
@@ -40,7 +60,7 @@ func parseFlags() *config {
 	// Parse flags
 	flag.Parse()
 
-	return cfg
+	return cfg, cfg.Validate()
 }
 
 // validateConfig validates the configuration and returns an error if invalid
@@ -83,7 +103,12 @@ func setupLogging(cfg *config) {
 
 func main() {
 	// Parse command line flags
-	cfg := parseFlags()
+	cfg, err := parseFlags()
+	if err != nil {
+		slog.Error("Invalid configuration", "error", err)
+		flag.Usage()
+		os.Exit(1)
+	}
 
 	// Handle version flag
 	if cfg.version {
