@@ -26,8 +26,13 @@ type config struct {
 	logOutput  string
 }
 
-// Validate returns error if config is invalid
+// Validate returns error if config is invalid.
+// It skips validation if the version flag is set.
 func (c *config) Validate() error {
+	// Allow version flag without requiring other flags
+	if c.version {
+		return nil
+	}
 	if c.sourceFile == "" {
 		return fmt.Errorf("source file is required")
 	}
