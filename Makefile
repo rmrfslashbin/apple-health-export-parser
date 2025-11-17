@@ -1,133 +1,64 @@
-# Go parameters
-GOCMD=go
-GOBUILD=$(GOCMD) build
-GOCLEAN=$(GOCMD) clean
-GOTEST=$(GOCMD) test
-GOGET=$(GOCMD) get
-GOMOD=$(GOCMD) mod
-GOVET=$(GOCMD) vet
+# Build information
+BINARY := apple-health-export-parser
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME)"
 
-# Binary name
-BINARY_NAME=apple-health-export-parser
+.PHONY: help build test lint lint-fix vet staticcheck vulncheck clean build-all check
 
-# Build directory
-BUILD_DIR=build
+help: ## Display this help message
+	@echo "Available targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
-# Project paths
-PACKAGE_PATH=./...
- 
-# Build flags
-BUILD_FLAGS=-v
+build: ## Build binary (default)
+	@echo "Building $(BINARY)..."
+	go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/
 
-# Version information
-VERSION ?= $(shell git describe --tags --always --dirty)
-COMMIT=$(shell git rev-parse --short HEAD)
-BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME)"
+build-all: ## Build for multiple platforms
+	@echo "Building for multiple platforms..."
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-linux-amd64 ./cmd/
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-amd64 ./cmd/
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/$(BINARY)-darwin-arm64 ./cmd/
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY)-windows-amd64.exe ./cmd/
+	@echo "Build complete!"
 
-# Platforms
-PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+test: ## Run tests with coverage
+	@echo "Running tests..."
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 
-# Make all directories that don't exist
-$(shell mkdir -p $(BUILD_DIR))
+vet: ## Run go vet
+	@echo "Running go vet..."
+	go vet ./...
 
-.PHONY: all build clean test coverage deps lint vet fmt help run build-all
+staticcheck: ## Run staticcheck
+	@echo "Running staticcheck..."
+	@command -v staticcheck >/dev/null 2>&1 || { echo "staticcheck not installed. Run: go install honnef.co/go/tools/cmd/staticcheck@latest"; exit 1; }
+	staticcheck ./...
 
-all: help
+vulncheck: ## Check for known vulnerabilities
+	@echo "Running govulncheck..."
+	@command -v govulncheck >/dev/null 2>&1 || { echo "govulncheck not installed. Run: go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
+	govulncheck ./...
 
-## build: Build the application for current platform
-build: deps
-	$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(PACKAGE_PATH)
-
-## build-all: Build for all platforms (Linux x86/ARM, MacOS x86/ARM)
-build-all: deps
-	$(foreach platform,$(PLATFORMS),\
-		echo "Building for $(platform)..." && \
-		GOOS=$(shell echo $(platform) | cut -d"/" -f1) \
-		GOARCH=$(shell echo $(platform) | cut -d"/" -f2) \
-		$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) \
-		-o $(BUILD_DIR)/$(BINARY_NAME)_$(shell echo $(platform) | tr "/" "_") \
-		$(PACKAGE_PATH) && \
-	) true
-
-## build-linux-amd64: Build for Linux x86_64
-build-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) \
-		-o $(BUILD_DIR)/$(BINARY_NAME)_linux_amd64 $(PACKAGE_PATH)
-
-## build-linux-arm64: Build for Linux ARM64
-build-linux-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) \
-		-o $(BUILD_DIR)/$(BINARY_NAME)_linux_arm64 $(PACKAGE_PATH)
-
-## build-darwin-amd64: Build for MacOS x86_64
-build-darwin-amd64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) \
-		-o $(BUILD_DIR)/$(BINARY_NAME)_darwin_amd64 $(PACKAGE_PATH)
-
-## build-darwin-arm64: Build for MacOS ARM64 (Apple Silicon)
-build-darwin-arm64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) \
-		-o $(BUILD_DIR)/$(BINARY_NAME)_darwin_arm64 $(PACKAGE_PATH)
-
-## clean: Clean build directory
-clean:
-	$(GOCLEAN)
-	rm -rf $(BUILD_DIR)
-
-## test: Run unit tests
-test:
-	$(GOTEST) -v ./...
-
-## coverage: Run tests with coverage
-coverage:
-	$(GOTEST) -v -coverprofile=coverage.out ./...
-	$(GOCMD) tool cover -html=coverage.out -o coverage.html
-
-## deps: Download and tidy dependencies
-deps:
-	$(GOMOD) download
-	$(GOMOD) tidy
-	$(GOMOD) verify
-
-## lint: Run linter
-lint:
+lint: ## Run golangci-lint
+	@echo "Running golangci-lint..."
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not installed. See: https://golangci-lint.run/usage/install/"; exit 1; }
 	golangci-lint run
 
-## vet: Run go vet
-vet:
-	$(GOVET) ./...
+lint-fix: ## Run golangci-lint with auto-fix
+	@echo "Running golangci-lint with auto-fix..."
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not installed. See: https://golangci-lint.run/usage/install/"; exit 1; }
+	golangci-lint run --fix
 
-## fmt: Run go fmt
-fmt:
-	$(GOCMD) fmt ./...
+check: vet test ## Run all checks (vet, test)
+	@echo "All checks passed!"
 
-## run: Build and run the application
-run: build
-	./$(BUILD_DIR)/$(BINARY_NAME)
+clean: ## Clean build artifacts
+	@echo "Cleaning build artifacts..."
+	rm -rf bin/ build/ coverage.out coverage.html
+	@echo "Clean complete!"
 
-## help: Show this help message
-help:
-	@echo "Usage:"
-	@echo
-	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' | sed -e 's/^/ /'
-	@echo
-	@echo "Build Targets:"
-	@echo " build              - Build for current platform"
-	@echo " build-all          - Build for all platforms"
-	@echo " build-linux-amd64  - Build for Linux x86_64"
-	@echo " build-linux-arm64  - Build for Linux ARM64"
-	@echo " build-darwin-amd64 - Build for MacOS x86_64"
-	@echo " build-darwin-arm64 - Build for MacOS ARM64 (Apple Silicon)"
-	@echo
-	@echo "Development Targets:"
-	@echo " clean         - Clean build directory"
-	@echo " test         - Run unit tests"
-	@echo " coverage     - Run tests with coverage"
-	@echo " deps         - Download and tidy dependencies"
-	@echo " lint         - Run linter"
-	@echo " vet          - Run go vet"
-	@echo " fmt          - Run go fmt"
-	@echo " run          - Build and run the application"
-
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := build

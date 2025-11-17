@@ -1,34 +1,105 @@
-# Health Data Processing Project
+# Apple Health Export Parser
 
-This project processes export files from https://www.healthyapps.dev/.
+A command-line tool to process and organize Apple Health JSON export files from [HealthyApps.dev](https://www.healthyapps.dev/) into structured, categorized data files.
 
-## Project Structure
+## Features
 
-- `main.go`: Contains the main processing and export logic
-- `structs.go`: Defines the data structures for parsing the JSON file
-- `exports/`: Directory where exported files are saved
+- Parse Apple Health JSON exports
+- Organize data by type (metrics, workouts, state of mind, ECG, heart rate notifications, symptoms)
+- Export individual records as separate JSON files with timestamps
+- Configurable logging with multiple output formats
+- Built-in validation and error handling
+- Comprehensive trace ID support for debugging
 
-## Setup Instructions
+## Author
 
-1. Ensure you have Go installed on your system.
-2. Place the "HealthAutoExport-2024-08-01-2024-09-07.json" file in the same directory as the Go files.
-3. Run the program using the command: `go run main.go structs.go`
+Robert Sigler (code@sigler.io)
 
-## Current Functionality
+## License
 
-The program currently does the following:
+MIT License - see [LICENSE](LICENSE) file for details
 
-1. Parses the JSON health data file
-2. Exports individual records for:
-   - Metrics
-   - Workouts
-   - State of Mind
-   - ECG (if present)
-   - Heart Rate Notifications (if present)
-   - Symptoms (if present)
-3. Saves exported data as JSON files in the `exports/` directory, using timestamps in filenames
+## Installation
 
-## Exported Data Structure
+### Prerequisites
+
+- Go 1.25.4 or later
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone git@github.com:rmrfslashbin/apple-health-export-parser.git
+cd apple-health-export-parser
+
+# Build the binary
+make build
+
+# Or build for multiple platforms
+make build-all
+```
+
+The binary will be created in the `bin/` directory.
+
+## Usage
+
+### Basic Usage
+
+```bash
+./bin/apple-health-export-parser -source path/to/health-export.json
+```
+
+### Command-Line Options
+
+```
+-source string
+    Source JSON file to process (required)
+
+-export string
+    Directory to export processed data (default "exports")
+
+-verbose
+    Enable verbose logging (default false)
+
+-version
+    Display version information
+
+-log-level string
+    Log level: debug, info, warn, error (default "info")
+
+-log-format string
+    Log format: json or text (default "text")
+
+-log-output string
+    Log output: stderr, /path/to/file, or /path/to/dir/ (default "stderr")
+```
+
+### Examples
+
+Process a health export file with verbose logging:
+```bash
+./bin/apple-health-export-parser \
+  -source HealthAutoExport-2024-08-01.json \
+  -verbose
+```
+
+Export to a custom directory with JSON logging:
+```bash
+./bin/apple-health-export-parser \
+  -source HealthAutoExport-2024-08-01.json \
+  -export ./my-health-data \
+  -log-format json \
+  -log-output ./logs/
+```
+
+Display version information:
+```bash
+./bin/apple-health-export-parser -version
+```
+
+## Output Structure
+
+The tool creates the following directory structure:
 
 ```
 exports/
@@ -42,31 +113,119 @@ exports/
 │   ├── YYYY-MM-DD_HH-MM-SS_state_of_mind_type.json
 │   └── ...
 ├── ecg/
+│   └── ...
 ├── heart_rate_notifications/
+│   └── ...
 └── symptoms/
+    └── ...
 ```
 
-## Next Steps
+Each exported file contains the complete data for a single record, making it easy to analyze individual metrics, workouts, or health events.
 
-To continue development in a new session:
+## Development
 
-1. Review the existing code in `main.go` and `structs.go`
-2. Consider adding data analysis functions, such as:
-   - Calculating average daily metrics
-   - Analyzing workout patterns
-   - Examining relationships between workouts and state of mind
-   - Creating a timeline of mood changes
-   - Identifying correlations between different health metrics
-3. Implement data visualization features
-4. Add error handling and logging for better debugging
-5. Create unit tests for the processing and export functions
+### Running Tests
 
-## Dependencies
+```bash
+# Run tests with coverage
+make test
 
-- Go standard library (no external dependencies at this time)
+# View coverage report
+open coverage.html
+```
 
-## Notes for Future Sessions
+### Running Linters
 
-- The current implementation assumes specific date formats. If date formats in the input file change, update the `parseDate` function in `structs.go`
-- The program currently loads the entire JSON file into memory. For very large files, consider implementing streaming or chunked processing
-- If additional data types are added to the health export, update the `HealthData` struct in `structs.go` and add corresponding export functions in `main.go`
+```bash
+# Run all linters
+make lint
+
+# Run individual checks
+make vet
+make staticcheck
+
+# Check for vulnerabilities
+make vulncheck
+```
+
+### Building
+
+```bash
+# Build for current platform
+make build
+
+# Build for all platforms
+make build-all
+
+# Clean build artifacts
+make clean
+```
+
+## Contributing
+
+Contributions are welcome! Please follow these guidelines:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass (`make test`)
+6. Run linters (`make lint`)
+7. Commit your changes with descriptive messages
+8. Push to your branch
+9. Open a Pull Request
+
+### Code Style
+
+- Follow standard Go formatting (enforced by `gofmt` and `goimports`)
+- Write godoc comments for all exported symbols
+- Use table-driven tests
+- Aim for 80% test coverage
+- Handle errors explicitly
+
+## Troubleshooting
+
+### Common Issues
+
+**"source file is required" error**
+- Make sure to specify the `-source` flag with a valid JSON file path
+
+**Permission denied when creating export directory**
+- Ensure you have write permissions in the export directory
+- Try specifying a different directory with `-export`
+
+**JSON parsing errors**
+- Verify your source file is valid JSON
+- Ensure the file follows the HealthyApps.dev export format
+
+### Debug Logging
+
+Enable debug logging for detailed execution information:
+```bash
+./bin/apple-health-export-parser \
+  -source your-file.json \
+  -log-level debug \
+  -log-output ./logs/
+```
+
+## Roadmap
+
+Future enhancements under consideration:
+
+- [ ] Data analysis functions (average daily metrics, workout patterns)
+- [ ] Correlation analysis between metrics
+- [ ] Data visualization output
+- [ ] Support for additional export formats (CSV, SQLite)
+- [ ] Streaming processing for large files
+- [ ] Web interface for interactive exploration
+
+## Project History
+
+- **v2025.11.17** - Project restructuring with enhanced logging and testing
+- **Initial Release** - Basic parsing and export functionality
+
+## Support
+
+For bugs, feature requests, or questions:
+- Open an issue on [GitHub](https://github.com/rmrfslashbin/apple-health-export-parser/issues)
+- Contact: code@sigler.io

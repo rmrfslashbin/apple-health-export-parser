@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rs/xid"
 )
 
 // config holds the application configuration
@@ -17,6 +21,9 @@ type config struct {
 	exportDir  string
 	verbose    bool
 	version    bool
+	logLevel   string
+	logFormat  string
+	logOutput  string
 }
 
 // Validate returns error if config is invalid
@@ -46,8 +53,11 @@ func parseFlags() (*config, error) {
 	// Define flags
 	flag.StringVar(&cfg.sourceFile, "source", "", "Source JSON file to process (required)")
 	flag.StringVar(&cfg.exportDir, "export", "exports", "Directory to export processed data")
-	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging (deprecated: use -log-level=debug)")
 	flag.BoolVar(&cfg.version, "version", false, "Display version information")
+	flag.StringVar(&cfg.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	flag.StringVar(&cfg.logFormat, "log-format", "text", "Log format (json, text)")
+	flag.StringVar(&cfg.logOutput, "log-output", "stderr", "Log output (stderr, /path/to/file, or /path/to/dir/)")
 
 	// Override usage message
 	flag.Usage = func() {
@@ -83,34 +93,86 @@ func validateConfig(cfg *config) error {
 	return nil
 }
 
-// setupLogging configures the logging based on the verbose flag
-func setupLogging(cfg *config) {
-	var logLevel slog.Level
+// setupLogging configures the logging based on configuration
+func setupLogging(cfg *config) (*slog.Logger, error) {
+	// Handle deprecated verbose flag
 	if cfg.verbose {
-		logLevel = slog.LevelDebug
+		cfg.logLevel = "debug"
+	}
+
+	// Parse log level
+	var level slog.Level
+	switch strings.ToLower(cfg.logLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return nil, fmt.Errorf("invalid log level: %s (valid: debug, info, warn, error)", cfg.logLevel)
+	}
+
+	// Setup output writer
+	var writer io.Writer
+	switch {
+	case cfg.logOutput == "" || cfg.logOutput == "stderr":
+		writer = os.Stderr
+	case strings.HasSuffix(cfg.logOutput, "/"):
+		// Directory - create dated log file
+		if err := os.MkdirAll(cfg.logOutput, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
+		}
+		logFile := filepath.Join(cfg.logOutput,
+			fmt.Sprintf("apple-health-export-parser-%s.log", time.Now().Format("2006-01-02")))
+		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		// Use MultiWriter to write to both stderr and file
+		writer = io.MultiWriter(os.Stderr, f)
+	default:
+		// Specific file path
+		dir := filepath.Dir(cfg.logOutput)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
+		}
+		f, err := os.OpenFile(cfg.logOutput, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		// Use MultiWriter to write to both stderr and file
+		writer = io.MultiWriter(os.Stderr, f)
+	}
+
+	// Create handler based on format
+	opts := &slog.HandlerOptions{Level: level}
+	var handler slog.Handler
+
+	if strings.ToLower(cfg.logFormat) == "json" {
+		handler = slog.NewJSONHandler(writer, opts)
 	} else {
-		logLevel = slog.LevelInfo
+		handler = slog.NewTextHandler(writer, opts)
 	}
 
-	opts := &slog.HandlerOptions{
-		Level: logLevel,
-	}
-
-	handler := slog.NewTextHandler(os.Stderr, opts)
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
+	return slog.New(handler), nil
 }
 
 func main() {
+	// Create context
+	ctx := context.Background()
+
 	// Parse command line flags
 	cfg, err := parseFlags()
 	if err != nil {
-		slog.Error("Invalid configuration", "error", err)
+		fmt.Fprintf(os.Stderr, "ERROR: Invalid configuration: %v\n", err)
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	// Handle version flag
+	// Handle version flag (before logging setup)
 	if cfg.version {
 		vInfo := GetVersion()
 		fmt.Println(vInfo.String())
@@ -118,38 +180,55 @@ func main() {
 	}
 
 	// Set up logging
-	setupLogging(cfg)
+	logger, err := setupLogging(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to setup logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Generate trace ID for this execution
+	traceID := xid.New().String()
+
+	// Add trace ID and version to logger
+	logger = logger.With(
+		"trace_id", traceID,
+		"version", GetVersion().ShortString(),
+		"pid", os.Getpid(),
+	)
+	slog.SetDefault(logger)
+
+	// Add trace ID to context
+	ctx = context.WithValue(ctx, "trace_id", traceID)
 
 	// Validate configuration
 	if err := validateConfig(cfg); err != nil {
-		slog.Error("Invalid configuration", "error", err)
+		logger.Error("Invalid configuration", "error", err)
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	// Log startup information
-	slog.Info("Starting Apple Health Export Parser",
-		"version", GetVersion().ShortString())
+	logger.Info("Starting Apple Health Export Parser")
 
 	// Create the export directory if it doesn't exist
 	if err := os.MkdirAll(cfg.exportDir, 0755); err != nil {
-		slog.Error("Failed to create export directory",
+		logger.Error("Failed to create export directory",
 			"dir", cfg.exportDir,
 			"error", err)
 		os.Exit(1)
 	}
 
 	// Process the source file
-	if err := processHealthData(cfg); err != nil {
-		slog.Error("Failed to process health data", "error", err)
+	if err := processHealthData(ctx, cfg); err != nil {
+		logger.Error("Failed to process health data", "error", err)
 		os.Exit(1)
 	}
 
-	slog.Info("Data export completed successfully")
+	logger.Info("Data export completed successfully")
 }
 
 // processHealthData reads and processes the Apple Health export file
-func processHealthData(cfg *config) error {
+func processHealthData(ctx context.Context, cfg *config) error {
 	slog.Info("Processing health data",
 		"source", cfg.sourceFile,
 		"export_dir", cfg.exportDir)
