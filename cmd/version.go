@@ -52,5 +52,9 @@ func (v VersionInfo) String() string {
 
 // ShortString returns a concise version string
 func (v VersionInfo) ShortString() string {
-	return fmt.Sprintf("v%s (%s)", v.Version, v.Commit[:7])
+	commit := v.Commit
+	if len(commit) > 7 {
+		commit = commit[:7]
+	}
+	return fmt.Sprintf("v%s (%s)", v.Version, commit)
 }

@@ -58,6 +58,7 @@ type Workout struct {
 	Duration           float64         `json:"duration"`           // Duration in seconds
 	End                time.Time       `json:"end"`                // End time
 	HeartRateData      []HeartRateData `json:"heartRateData"`      // Heart rate measurements during workout
+	HeartRateRecovery  []HeartRateData `json:"heartRateRecovery"`  // Heart rate recovery measurements after workout
 	Humidity           ValueWithUnits  `json:"humidity"`           // Humidity percentage
 	ID                 string          `json:"id"`                 // Unique identifier
 	Intensity          ValueWithUnits  `json:"intensity"`          // Workout intensity level
@@ -104,6 +105,75 @@ type StepRecord struct {
 	Qty    float64   `json:"qty"`    // Number of steps
 	Source string    `json:"source"` // Source device or app
 	Units  string    `json:"units"`  // Units (typically "count")
+}
+
+// Statistics represents aggregated statistical data for time-series measurements.
+type Statistics struct {
+	Count  int     `json:"count"`            // Number of data points
+	Min    float64 `json:"min"`              // Minimum value
+	Max    float64 `json:"max"`              // Maximum value
+	Avg    float64 `json:"avg"`              // Average value
+	Total  float64 `json:"total,omitempty"`  // Total/sum (for cumulative metrics)
+	First  float64 `json:"first,omitempty"`  // First value in series
+	Last   float64 `json:"last,omitempty"`   // Last value in series
+}
+
+// WorkoutSummary represents a condensed view of workout data for AI consumption.
+// It includes metadata and aggregated statistics without large time-series arrays.
+type WorkoutSummary struct {
+	// Core metadata
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Start       time.Time `json:"start"`
+	End         time.Time `json:"end"`
+	Duration    float64   `json:"duration"` // Duration in seconds
+
+	// Environmental conditions
+	Temperature ValueWithUnits `json:"temperature"`
+	Humidity    ValueWithUnits `json:"humidity"`
+	Intensity   ValueWithUnits `json:"intensity"`
+
+	// Aggregated statistics
+	TotalEnergyBurned   EnergyValue `json:"totalEnergyBurned"`
+	ActiveEnergyStats   *Statistics `json:"activeEnergyStats,omitempty"`
+	HeartRateStats      *Statistics `json:"heartRateStats,omitempty"`
+	HeartRateRecoveryStats *Statistics `json:"heartRateRecoveryStats,omitempty"`
+	StepCountStats      *Statistics `json:"stepCountStats,omitempty"`
+
+	// Data point counts (so AI knows what detail files exist)
+	ActiveEnergyCount       int `json:"activeEnergyCount"`
+	HeartRateDataCount      int `json:"heartRateDataCount"`
+	HeartRateRecoveryCount  int `json:"heartRateRecoveryCount"`
+	StepCountDataCount      int `json:"stepCountDataCount"`
+
+	// Metadata
+	Metadata interface{} `json:"metadata,omitempty"`
+}
+
+// ExportManifest provides an index of all exported files for AI navigation.
+type ExportManifest struct {
+	GeneratedAt time.Time `json:"generatedAt"`
+	TraceID     string    `json:"traceId"`
+	SourceFile  string    `json:"sourceFile"`
+	Version     string    `json:"version"`
+
+	Summary struct {
+		TotalMetrics      int `json:"totalMetrics"`
+		TotalWorkouts     int `json:"totalWorkouts"`
+		TotalStateOfMind  int `json:"totalStateOfMind"`
+	} `json:"summary"`
+
+	Metrics      []string `json:"metrics"`      // List of metric files
+	Workouts     []string `json:"workouts"`     // List of workout summary files
+	StateOfMind  []string `json:"stateOfMind"`  // List of state of mind files
+
+	// Detail file directories
+	WorkoutDetails struct {
+		HeartRate       []string `json:"heartRate,omitempty"`
+		HeartRateRecovery []string `json:"heartRateRecovery,omitempty"`
+		Energy          []string `json:"energy,omitempty"`
+		Steps           []string `json:"steps,omitempty"`
+	} `json:"workoutDetails"`
 }
 
 // parseDate attempts to parse a date string using multiple common formats.
