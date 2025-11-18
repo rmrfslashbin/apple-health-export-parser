@@ -79,8 +79,12 @@ apple-health-export-parser process [flags]
 
 **Flags:**
 ```
--s, --source string   Source JSON file to process (required)
--e, --export string   Directory to export processed data (default "exports")
+-s, --source string              Source JSON file to process (required)
+-e, --export string              Directory to export processed data (default "exports")
+-c, --collections strings        Target collections for MCP import (comma-separated)
+    --batch-size-workouts int    Batch size for workout records (default 20)
+    --batch-size-som int         Batch size for state of mind records (default 20)
+    --batch-size-metrics int     Batch size for metric records (default 10)
 ```
 
 **Examples:**
@@ -88,6 +92,23 @@ apple-health-export-parser process [flags]
 Process a health export file:
 ```bash
 apple-health-export-parser process --source HealthAutoExport-2024-08-01.json
+```
+
+Process with MCP Memory import preparation:
+```bash
+apple-health-export-parser process \
+  --source HealthAutoExport-2024-08-01.json \
+  --collections spinal_fusion_recovery
+```
+
+Process with multiple collections and custom batch sizes:
+```bash
+apple-health-export-parser process \
+  --source HealthAutoExport-2024-08-01.json \
+  --collections health_tracking,recovery_log \
+  --batch-size-workouts 30 \
+  --batch-size-som 25 \
+  --batch-size-metrics 15
 ```
 
 Process with custom export directory:
@@ -151,6 +172,14 @@ The tool creates the following directory structure:
 
 ```
 exports/
+├── import/
+│   ├── batch_1_workouts.json
+│   ├── batch_2_workouts.json
+│   ├── batch_1_state_of_mind.json
+│   ├── batch_2_state_of_mind.json
+│   ├── batch_1_metrics.json
+│   ├── batch_summary.json
+│   └── ...
 ├── metrics/
 │   ├── YYYY-MM-DD_HH-MM-SS_metric_name.json
 │   └── ...
@@ -169,6 +198,50 @@ exports/
 ```
 
 Each exported file contains the complete data for a single record, making it easy to analyze individual metrics, workouts, or health events.
+
+### MCP Memory Import Batches
+
+The `import/` directory contains batch files ready for import into the MCP Memory server:
+
+- **Batch Files**: JSON arrays of memory objects formatted for direct MCP import
+- **Collections Field**: Each memory includes the target collection(s) specified via `--collections` flag
+- **Batch Summary**: `batch_summary.json` provides an overview of all generated batches
+
+**Batch Summary Format:**
+```json
+{
+  "total_records": 160,
+  "workout_records": 49,
+  "state_of_mind_records": 81,
+  "metric_records": 30,
+  "workout_batches": 3,
+  "state_of_mind_batches": 5,
+  "metric_batches": 3,
+  "target_collections": ["spinal_fusion_recovery"],
+  "timestamp": "2025-11-17T18:35:54Z"
+}
+```
+
+**Memory Object Format:**
+```json
+{
+  "type": "workout_log",
+  "content": "# Outdoor Walk - November 17, 2025...",
+  "metadata": {
+    "workout_type": "Outdoor Walk",
+    "date": "2025-11-17",
+    "time": "14:30:00",
+    "day_of_week": "Sunday",
+    "time_of_day": "afternoon",
+    "duration_minutes": 45,
+    "data_source": "apple_health",
+    "apple_health_id": "ABC123...",
+    "review_status": "unreviewed",
+    "privacy_level": "private"
+  },
+  "collections": ["spinal_fusion_recovery"]
+}
+```
 
 ## Development
 

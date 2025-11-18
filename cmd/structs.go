@@ -148,6 +148,65 @@ type WorkoutSummary struct {
 
 	// Metadata
 	Metadata interface{} `json:"metadata,omitempty"`
+
+	// Import-ready metadata for MCP import
+	ImportMetadata ImportMetadata `json:"importMetadata"`
+	MemoryContent  MemoryContent  `json:"memoryContent"`
+}
+
+// ImportMetadata provides domain-agnostic metadata useful for any import process.
+type ImportMetadata struct {
+	Date            string  `json:"date"`            // "2025-11-12"
+	Time            string  `json:"time"`            // "17:05:04"
+	DayOfWeek       string  `json:"dayOfWeek"`       // "Tuesday"
+	TimeOfDay       string  `json:"timeOfDay"`       // "morning/afternoon/evening/night"
+	DurationMinutes float64 `json:"durationMinutes"` // 25.2
+	HasHeartRate    bool    `json:"hasHeartRateData"`
+	HasSteps        bool    `json:"hasStepData"`
+	HasRecovery     bool    `json:"hasRecoveryData"`
+}
+
+// MemoryContent provides pre-formatted content ready for import into memory systems.
+type MemoryContent struct {
+	Title    string `json:"title"`    // "Outdoor Walk - November 12, 2025"
+	Summary  string `json:"summary"`  // One-line summary
+	Markdown string `json:"markdown"` // Full formatted markdown content
+}
+
+// StateOfMindSummary represents a condensed view of mental health data for AI consumption.
+type StateOfMindSummary struct {
+	ID                    string    `json:"id"`
+	Kind                  string    `json:"kind"` // "daily_mood" or "momentary_emotion"
+	Start                 time.Time `json:"start"`
+	End                   time.Time `json:"end"`
+	Valence               float64   `json:"valence"`
+	ValenceClassification string    `json:"valenceClassification"` // "pleasant", "unpleasant", etc.
+	Labels                []interface{} `json:"labels,omitempty"`
+	Associations          []interface{} `json:"associations,omitempty"`
+
+	// Import-ready metadata for MCP import
+	ImportMetadata ImportMetadata `json:"importMetadata"`
+	MemoryContent  MemoryContent  `json:"memoryContent"`
+}
+
+// MetricSummary represents a condensed view of metric time-series data for AI consumption.
+type MetricSummary struct {
+	Name  string `json:"name"`  // Metric name (e.g., "Heart Rate", "Steps")
+	Units string `json:"units"` // Unit of measurement (e.g., "bpm", "count")
+
+	// Time range
+	StartDate     time.Time `json:"startDate"`
+	EndDate       time.Time `json:"endDate"`
+	DataPoints    int       `json:"dataPoints"`
+
+	// Statistics
+	Min           float64   `json:"min,omitempty"`
+	Max           float64   `json:"max,omitempty"`
+	Average       float64   `json:"average,omitempty"`
+
+	// Import-ready metadata for MCP import
+	ImportMetadata ImportMetadata `json:"importMetadata"`
+	MemoryContent  MemoryContent  `json:"memoryContent"`
 }
 
 // ExportManifest provides an index of all exported files for AI navigation.
@@ -156,6 +215,13 @@ type ExportManifest struct {
 	TraceID     string    `json:"traceId"`
 	SourceFile  string    `json:"sourceFile"`
 	Version     string    `json:"version"`
+
+	// Date range analysis
+	DateRange struct {
+		Earliest  time.Time `json:"earliest"`
+		Latest    time.Time `json:"latest"`
+		TotalDays int       `json:"totalDays"`
+	} `json:"dateRange"`
 
 	Summary struct {
 		TotalMetrics      int `json:"totalMetrics"`
@@ -174,6 +240,78 @@ type ExportManifest struct {
 		Energy          []string `json:"energy,omitempty"`
 		Steps           []string `json:"steps,omitempty"`
 	} `json:"workoutDetails"`
+
+	// Import hints for MCP clients
+	ImportHints struct {
+		RecommendedMemoryTypes struct {
+			Workouts     string `json:"workouts"`     // "workout_log"
+			Metrics      string `json:"metrics"`      // "health_metric"
+			StateOfMind  string `json:"stateOfMind"`  // "mental_health_log"
+		} `json:"recommendedMemoryTypes"`
+
+		BatchRecommendations struct {
+			Workouts struct {
+				TotalItems         int      `json:"totalItems"`
+				SuggestedBatchSize int      `json:"suggestedBatchSize"`
+				EstimatedBatches   int      `json:"estimatedBatches"`
+				GroupingOptions    []string `json:"groupingOptions"`
+			} `json:"workouts"`
+			Metrics struct {
+				TotalTypes         int      `json:"totalTypes"`
+				SuggestedBatchSize int      `json:"suggestedBatchSize"`
+				GroupingOptions    []string `json:"groupingOptions"`
+			} `json:"metrics"`
+			StateOfMind struct {
+				TotalItems         int      `json:"totalItems"`
+				SuggestedBatchSize int      `json:"suggestedBatchSize"`
+				EstimatedBatches   int      `json:"estimatedBatches"`
+			} `json:"stateOfMind"`
+		} `json:"batchRecommendations"`
+
+		DataQuality struct {
+			WorkoutsWithHeartRate int `json:"workoutsWithHeartRate"`
+			WorkoutsWithSteps     int `json:"workoutsWithSteps"`
+			WorkoutsWithRecovery  int `json:"workoutsWithRecovery"`
+		} `json:"dataQuality"`
+
+		ContextWindowEstimates struct {
+			WorkoutSummaryAvgChars int `json:"workoutSummaryAvgChars"`
+			MetricFileAvgChars     int `json:"metricFileAvgChars"`
+			StateOfMindAvgChars    int `json:"stateOfMindAvgChars"`
+			SafeBatchSizeChars     int `json:"safeBatchSizeChars"` // ~75k recommended for Claude
+		} `json:"contextWindowEstimates"`
+	} `json:"importHints"`
+}
+
+// ImportBatch represents a pre-grouped set of memories ready for MCP import.
+type ImportBatch struct {
+	Batch           int      `json:"batch"`
+	Description     string   `json:"description"`
+	Count           int      `json:"count"`
+	EstimatedChars  int      `json:"estimatedChars"`
+	TargetCollection string  `json:"targetCollection,omitempty"` // Optional, for specific collections
+	Memories        []Memory `json:"memories"`
+}
+
+// Memory represents a single memory ready for MCP import.
+type Memory struct {
+	Type        string                 `json:"type"`
+	Content     string                 `json:"content"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Collections []string               `json:"collections"` // Target collections for MCP Memory server
+}
+
+// BatchSummary provides an overview of generated import batches.
+type BatchSummary struct {
+	TotalRecords        int       `json:"total_records"`
+	WorkoutRecords      int       `json:"workout_records"`
+	StateOfMindRecords  int       `json:"state_of_mind_records"`
+	MetricRecords       int       `json:"metric_records"`
+	WorkoutBatches      int       `json:"workout_batches"`
+	StateOfMindBatches  int       `json:"state_of_mind_batches"`
+	MetricBatches       int       `json:"metric_batches"`
+	TargetCollections   []string  `json:"target_collections"`
+	Timestamp           time.Time `json:"timestamp"`
 }
 
 // parseDate attempts to parse a date string using multiple common formats.

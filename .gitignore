@@ -27,10 +27,18 @@ tmp/
 .env
 .env.local
 
+# MCP configuration (contains secrets)
+.mcp.json
+
 # Export directories (user data)
 exports/
+import/
 source/
 build/
+
+# Documentation temp files
+doc/*.tmp
+doc/*.temp
 
 # Log files
 *.log
