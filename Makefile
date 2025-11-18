@@ -53,7 +53,7 @@ lint-fix: ## Run golangci-lint with auto-fix
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not installed. See: https://golangci-lint.run/usage/install/"; exit 1; }
 	golangci-lint run --fix
 
-check: vet test ## Run all checks (vet, test)
+check: vet staticcheck test ## Run all checks (vet, staticcheck, test)
 	@echo "All checks passed!"
 
 clean: ## Clean build artifacts

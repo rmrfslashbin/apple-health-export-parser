@@ -94,7 +94,9 @@ func runProcess(cmd *cobra.Command, args []string) error {
 	slog.SetDefault(logger)
 
 	// Add trace ID to context
-	ctx = context.WithValue(ctx, "trace_id", traceID)
+	type contextKey string
+	const traceIDKey contextKey = "trace_id"
+	ctx = context.WithValue(ctx, traceIDKey, traceID)
 
 	// Log startup information
 	logger.Info("Starting Apple Health Export Parser",
@@ -923,7 +925,14 @@ func createStateOfMindSummary(som StateOfMind) StateOfMindSummary {
 // generateStateOfMindTitle creates a title for a state of mind record.
 func generateStateOfMindTitle(summary StateOfMindSummary) string {
 	kindLabel := strings.ReplaceAll(summary.Kind, "_", " ")
-	kindLabel = strings.Title(kindLabel)
+	// Simple title case - capitalize first letter of each word
+	words := strings.Fields(kindLabel)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	kindLabel = strings.Join(words, " ")
 	return fmt.Sprintf("%s - %s", kindLabel, summary.Start.Format("January 2, 2006"))
 }
 
@@ -1037,7 +1046,14 @@ func createMetricSummary(metric Metric) MetricSummary {
 // generateMetricTitle creates a title for a metric.
 func generateMetricTitle(summary MetricSummary) string {
 	metricName := strings.ReplaceAll(summary.Name, "_", " ")
-	metricName = strings.Title(metricName)
+	// Simple title case - capitalize first letter of each word
+	words := strings.Fields(metricName)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	metricName = strings.Join(words, " ")
 	return fmt.Sprintf("%s - %s to %s",
 		metricName,
 		summary.StartDate.Format("Jan 2"),
