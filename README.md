@@ -151,6 +151,61 @@ cd exports/2024-08-01/import
 ./import.sh  # Imports all batches using 'memory tools run'
 ```
 
+### Complete End-to-End Workflow
+
+**Full workflow to process Apple Health data and import to MCP Memory:**
+
+```bash
+# Step 1: Process the Apple Health export with import script generation
+apple-health-export-parser process \
+  --source HealthAutoExport-2025-11-17.json \
+  --collections spinal_fusion_recovery \
+  --generate-import-script \
+  --export exports
+
+# Step 2: Navigate to the generated import directory
+cd exports/2025-11-17/import
+
+# Step 3: Review what will be imported (optional)
+cat batch_summary.json
+
+# Step 4: Run the automated import script
+./import.sh
+
+# The script will:
+# - Validate the Memory CLI is available
+# - Import all workout batches
+# - Import all state of mind batches
+# - Import all metric batches
+# - Log all operations to import.log
+# - Report success/failure summary
+```
+
+**Manual import using Memory CLI (alternative to import.sh):**
+
+```bash
+# Import workout batches
+memory tools run --tool memory_memory_create --input batch_1_workouts.json
+
+# Import state of mind batches
+memory tools run --tool memory_memory_create --input batch_1_state_of_mind.json
+
+# Import metric batches
+memory tools run --tool memory_memory_create --input batch_1_metrics.json
+memory tools run --tool memory_memory_create --input batch_2_metrics.json
+memory tools run --tool memory_memory_create --input batch_3_metrics.json
+```
+
+**Verify the import:**
+
+```bash
+# Check collection stats
+memory tools run --tool memory_collection_stats --input '{"id": "spinal_fusion_recovery"}'
+
+# Search for recently imported memories
+memory tools run --tool memory_memory_search --input '{"collection": "spinal_fusion_recovery", "query": "workout", "limit": 5}'
+```
+
 ### Version Command
 
 Display detailed version information:

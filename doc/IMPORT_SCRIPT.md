@@ -16,6 +16,45 @@ When processing Apple Health exports with the `--generate-import-script` flag, t
 
 ## Usage
 
+### Complete End-to-End Workflow
+
+```bash
+# Step 1: Process Apple Health export and generate import script
+apple-health-export-parser process \
+  --source HealthAutoExport-2025-11-17.json \
+  --collections spinal_fusion_recovery \
+  --generate-import-script \
+  --export exports
+
+# Step 2: Navigate to import directory
+cd exports/2025-11-17/import
+
+# Step 3: Review what will be imported
+cat batch_summary.json
+
+# Example output:
+# {
+#   "total_records": 31,
+#   "workout_records": 1,
+#   "state_of_mind_records": 4,
+#   "metric_records": 26,
+#   "workout_batches": 1,
+#   "state_of_mind_batches": 1,
+#   "metric_batches": 3,
+#   "target_collections": ["spinal_fusion_recovery"],
+#   "timestamp": "2025-11-19T19:54:36.617668-05:00"
+# }
+
+# Step 4: Run the import script
+./import.sh
+
+# Step 5: Check the logs
+tail -20 import.log
+
+# Step 6: Verify import success
+memory tools run --tool memory_collection_stats --input '{"id": "spinal_fusion_recovery"}'
+```
+
 ### Basic Usage
 
 ```bash
@@ -201,6 +240,75 @@ tail -f import_errors.log
 ### Re-running Failed Imports
 
 If some batches fail, fix the underlying issue and re-run the script. The Memory MCP server handles duplicate imports gracefully.
+
+### Manual Import Commands
+
+If you prefer not to use the generated script, you can import batches manually:
+
+```bash
+# Navigate to import directory
+cd exports/2025-11-17/import
+
+# Import each batch type manually
+memory tools run --tool memory_memory_create --input batch_1_workouts.json
+memory tools run --tool memory_memory_create --input batch_1_state_of_mind.json
+memory tools run --tool memory_memory_create --input batch_1_metrics.json
+memory tools run --tool memory_memory_create --input batch_2_metrics.json
+memory tools run --tool memory_memory_create --input batch_3_metrics.json
+```
+
+### Verifying Imports
+
+After importing, verify the data was successfully added to MCP Memory:
+
+```bash
+# Check collection statistics
+memory tools run --tool memory_collection_stats --input '{"id": "spinal_fusion_recovery"}'
+
+# Search for workouts in the collection
+memory tools run --tool memory_memory_search --input '{
+  "collection": "spinal_fusion_recovery",
+  "query": "workout",
+  "limit": 10
+}'
+
+# Search for specific metrics
+memory tools run --tool memory_memory_search --input '{
+  "collection": "spinal_fusion_recovery",
+  "query": "heart rate",
+  "limit": 5
+}'
+
+# Search with metadata filters
+memory tools run --tool memory_memory_search --input '{
+  "collection": "spinal_fusion_recovery",
+  "query": "outdoor walk",
+  "filter": {"metadata.distance": {"$gt": 2.0}},
+  "limit": 5
+}'
+```
+
+### Batch Import with Verification Loop
+
+For production workflows, you might want to verify each batch import:
+
+```bash
+#!/bin/bash
+IMPORT_DIR="exports/2025-11-17/import"
+
+for batch_file in "${IMPORT_DIR}"/batch_*.json; do
+    echo "Importing $(basename "${batch_file}")..."
+
+    if memory tools run --tool memory_memory_create --input "${batch_file}"; then
+        echo "✓ Success: $(basename "${batch_file}")"
+    else
+        echo "✗ Failed: $(basename "${batch_file}")"
+        exit 1
+    fi
+done
+
+echo "All batches imported successfully!"
+```
 
 ## Implementation Details
 
