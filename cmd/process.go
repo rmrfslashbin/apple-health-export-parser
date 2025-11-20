@@ -322,12 +322,17 @@ func createWorkoutSummary(w Workout) WorkoutSummary {
 		Humidity:          w.Humidity,
 		Intensity:         w.Intensity,
 		TotalEnergyBurned: w.ActiveEnergyBurned,
+		TotalDistance:     w.Distance,
+		ElevationUp:       w.ElevationUp,
+		HasLocation:       w.Location != nil,
+		HasRoute:          w.Route != nil,
 		Metadata:          w.Metadata,
 
 		ActiveEnergyCount:      len(w.ActiveEnergy),
 		HeartRateDataCount:     len(w.HeartRateData),
 		HeartRateRecoveryCount: len(w.HeartRateRecovery),
 		StepCountDataCount:     len(w.StepCount),
+		DistanceDataCount:      len(w.WalkingAndRunningDistance),
 	}
 
 	// Calculate active energy statistics
@@ -348,6 +353,11 @@ func createWorkoutSummary(w Workout) WorkoutSummary {
 	// Calculate step count statistics
 	if len(w.StepCount) > 0 {
 		summary.StepCountStats = calculateStepStats(w.StepCount)
+	}
+
+	// Calculate distance statistics
+	if len(w.WalkingAndRunningDistance) > 0 {
+		summary.DistanceStats = calculateDistanceStats(w.WalkingAndRunningDistance)
 	}
 
 	// Generate import metadata
@@ -432,6 +442,37 @@ func calculateHeartRateStats(records []HeartRateData) *Statistics {
 
 // calculateStepStats computes statistics for step count data.
 func calculateStepStats(records []StepRecord) *Statistics {
+	if len(records) == 0 {
+		return nil
+	}
+
+	stats := &Statistics{
+		Count: len(records),
+		Min:   records[0].Qty,
+		Max:   records[0].Qty,
+		First: records[0].Qty,
+		Last:  records[len(records)-1].Qty,
+	}
+
+	var sum float64
+	for _, r := range records {
+		sum += r.Qty
+		if r.Qty < stats.Min {
+			stats.Min = r.Qty
+		}
+		if r.Qty > stats.Max {
+			stats.Max = r.Qty
+		}
+	}
+
+	stats.Avg = sum / float64(len(records))
+	stats.Total = sum
+
+	return stats
+}
+
+// calculateDistanceStats computes statistics for distance data.
+func calculateDistanceStats(records []DistanceRecord) *Statistics {
 	if len(records) == 0 {
 		return nil
 	}
@@ -584,6 +625,12 @@ func generateWorkoutMarkdown(summary WorkoutSummary) string {
 
 	// Performance summary
 	md.WriteString("## Performance Summary\n")
+	if summary.TotalDistance.Qty > 0 {
+		md.WriteString(fmt.Sprintf("- Distance: %.2f %s\n", summary.TotalDistance.Qty, summary.TotalDistance.Units))
+	}
+	if summary.ElevationUp.Qty > 0 {
+		md.WriteString(fmt.Sprintf("- Elevation Gain: %.1f %s\n", summary.ElevationUp.Qty, summary.ElevationUp.Units))
+	}
 	md.WriteString(fmt.Sprintf("- Total Energy: %.1f %s\n", summary.TotalEnergyBurned.Qty, summary.TotalEnergyBurned.Units))
 	md.WriteString(fmt.Sprintf("- Intensity: %.2f %s\n", summary.Intensity.Qty, summary.Intensity.Units))
 	md.WriteString("\n")
@@ -624,6 +671,15 @@ func generateWorkoutMarkdown(summary WorkoutSummary) string {
 		md.WriteString("\n")
 	}
 
+	// Distance
+	if summary.DistanceStats != nil && summary.DistanceStats.Count > 0 {
+		md.WriteString("## Distance\n")
+		md.WriteString(fmt.Sprintf("- Total: %.2f %s\n", summary.TotalDistance.Qty, summary.TotalDistance.Units))
+		md.WriteString(fmt.Sprintf("- Average: %.4f %s/point\n", summary.DistanceStats.Avg, summary.TotalDistance.Units))
+		md.WriteString(fmt.Sprintf("- Data Points: %d\n", summary.DistanceStats.Count))
+		md.WriteString("\n")
+	}
+
 	// Footer
 	md.WriteString("---\n")
 	md.WriteString(fmt.Sprintf("*Source: Apple Health (ID: %s)*\n", summary.ID))
@@ -636,6 +692,10 @@ func generateWorkoutSummaryText(summary WorkoutSummary) string {
 	durationMin := summary.Duration / 60.0
 	parts := []string{
 		fmt.Sprintf("%.1f minute %s", durationMin, strings.ToLower(summary.Name)),
+	}
+
+	if summary.TotalDistance.Qty > 0 {
+		parts = append(parts, fmt.Sprintf("covering %.2f %s", summary.TotalDistance.Qty, summary.TotalDistance.Units))
 	}
 
 	if summary.HeartRateStats != nil {
@@ -747,21 +807,39 @@ func generateWorkoutBatches(workouts []Workout, importDir string) (int, error) {
 		memories := make([]Memory, 0, len(batch))
 
 		for _, summary := range batch {
+			metadata := map[string]interface{}{
+				"workout_type":     summary.Name,
+				"date":             summary.ImportMetadata.Date,
+				"time":             summary.ImportMetadata.Time,
+				"day_of_week":      summary.ImportMetadata.DayOfWeek,
+				"time_of_day":      summary.ImportMetadata.TimeOfDay,
+				"duration_minutes": summary.ImportMetadata.DurationMinutes,
+				"data_source":      "apple_health",
+				"apple_health_id":  summary.ID,
+				"review_status":    "unreviewed",
+				"privacy_level":    "private",
+			}
+
+			// Add distance data if available
+			if summary.TotalDistance.Qty > 0 {
+				metadata["distance"] = summary.TotalDistance.Qty
+				metadata["distance_units"] = summary.TotalDistance.Units
+			}
+			if summary.ElevationUp.Qty > 0 {
+				metadata["elevation_gain"] = summary.ElevationUp.Qty
+				metadata["elevation_units"] = summary.ElevationUp.Units
+			}
+			if summary.HasLocation {
+				metadata["has_location"] = true
+			}
+			if summary.HasRoute {
+				metadata["has_route"] = true
+			}
+
 			memory := Memory{
-				Type:    "workout_log",
-				Content: summary.MemoryContent.Markdown,
-				Metadata: map[string]interface{}{
-					"workout_type":     summary.Name,
-					"date":             summary.ImportMetadata.Date,
-					"time":             summary.ImportMetadata.Time,
-					"day_of_week":      summary.ImportMetadata.DayOfWeek,
-					"time_of_day":      summary.ImportMetadata.TimeOfDay,
-					"duration_minutes": summary.ImportMetadata.DurationMinutes,
-					"data_source":      "apple_health",
-					"apple_health_id":  summary.ID,
-					"review_status":    "unreviewed",
-					"privacy_level":    "private",
-				},
+				Type:        "workout_log",
+				Content:     summary.MemoryContent.Markdown,
+				Metadata:    metadata,
 				Collections: targetCollections,
 			}
 			memories = append(memories, memory)

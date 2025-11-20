@@ -51,22 +51,27 @@ type StateOfMind struct {
 }
 
 // Workout represents a single exercise or workout session.
-// It includes duration, energy burned, heart rate data, and environmental conditions.
+// It includes duration, energy burned, heart rate data, distance, location, and environmental conditions.
 type Workout struct {
-	ActiveEnergy       []EnergyRecord  `json:"activeEnergy"`       // Energy burned over time during workout
-	ActiveEnergyBurned EnergyValue     `json:"activeEnergyBurned"` // Total energy burned
-	Duration           float64         `json:"duration"`           // Duration in seconds
-	End                time.Time       `json:"end"`                // End time
-	HeartRateData      []HeartRateData `json:"heartRateData"`      // Heart rate measurements during workout
-	HeartRateRecovery  []HeartRateData `json:"heartRateRecovery"`  // Heart rate recovery measurements after workout
-	Humidity           ValueWithUnits  `json:"humidity"`           // Humidity percentage
-	ID                 string          `json:"id"`                 // Unique identifier
-	Intensity          ValueWithUnits  `json:"intensity"`          // Workout intensity level
-	Metadata           interface{}     `json:"metadata"`           // Additional metadata
-	Name               string          `json:"name"`               // Workout name (e.g., "Running", "Cycling")
-	Start              time.Time       `json:"start"`              // Start time
-	StepCount          []StepRecord    `json:"stepCount"`          // Step count over time during workout
-	Temperature        ValueWithUnits  `json:"temperature"`        // Temperature during workout
+	ActiveEnergy            []EnergyRecord  `json:"activeEnergy"`            // Energy burned over time during workout
+	ActiveEnergyBurned      EnergyValue     `json:"activeEnergyBurned"`      // Total energy burned
+	Distance                ValueWithUnits  `json:"distance"`                // Total distance covered
+	WalkingAndRunningDistance []DistanceRecord `json:"walkingAndRunningDistance"` // Distance over time
+	ElevationUp             ValueWithUnits  `json:"elevationUp"`             // Elevation gained
+	Duration                float64         `json:"duration"`                // Duration in seconds
+	End                     time.Time       `json:"end"`                     // End time
+	HeartRateData           []HeartRateData `json:"heartRateData"`           // Heart rate measurements during workout
+	HeartRateRecovery       []HeartRateData `json:"heartRateRecovery"`       // Heart rate recovery measurements after workout
+	Humidity                ValueWithUnits  `json:"humidity"`                // Humidity percentage
+	ID                      string          `json:"id"`                      // Unique identifier
+	Intensity               ValueWithUnits  `json:"intensity"`               // Workout intensity level
+	Location                interface{}     `json:"location"`                // Location data (coordinates, route)
+	Route                   interface{}     `json:"route"`                   // GPS route data
+	Metadata                interface{}     `json:"metadata"`                // Additional metadata
+	Name                    string          `json:"name"`                    // Workout name (e.g., "Running", "Cycling")
+	Start                   time.Time       `json:"start"`                   // Start time
+	StepCount               []StepRecord    `json:"stepCount"`               // Step count over time during workout
+	Temperature             ValueWithUnits  `json:"temperature"`             // Temperature during workout
 }
 
 // EnergyRecord represents energy expenditure at a specific time.
@@ -107,6 +112,37 @@ type StepRecord struct {
 	Units  string    `json:"units"`  // Units (typically "count")
 }
 
+// DistanceRecord represents distance covered at a specific time.
+type DistanceRecord struct {
+	Date   time.Time `json:"date"`   // Timestamp
+	Qty    float64   `json:"qty"`    // Distance value
+	Source string    `json:"source"` // Source device or app
+	Units  string    `json:"units"`  // Distance units (e.g., "mi", "km")
+}
+
+// UnmarshalJSON custom unmarshaler for DistanceRecord to handle date format.
+func (d *DistanceRecord) UnmarshalJSON(data []byte) error {
+	type Alias DistanceRecord
+	aux := &struct {
+		Date string `json:"date"`
+		*Alias
+	}{
+		Alias: (*Alias)(d),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	parsedDate, err := parseDate(aux.Date)
+	if err != nil {
+		return err
+	}
+	d.Date = parsedDate
+
+	return nil
+}
+
 // Statistics represents aggregated statistical data for time-series measurements.
 type Statistics struct {
 	Count  int     `json:"count"`            // Number of data points
@@ -133,18 +169,26 @@ type WorkoutSummary struct {
 	Humidity    ValueWithUnits `json:"humidity"`
 	Intensity   ValueWithUnits `json:"intensity"`
 
+	// Distance and elevation
+	TotalDistance ValueWithUnits  `json:"totalDistance,omitempty"`
+	ElevationUp   ValueWithUnits  `json:"elevationUp,omitempty"`
+	DistanceStats *Statistics     `json:"distanceStats,omitempty"`
+	HasLocation   bool            `json:"hasLocation"`
+	HasRoute      bool            `json:"hasRoute"`
+
 	// Aggregated statistics
-	TotalEnergyBurned   EnergyValue `json:"totalEnergyBurned"`
-	ActiveEnergyStats   *Statistics `json:"activeEnergyStats,omitempty"`
-	HeartRateStats      *Statistics `json:"heartRateStats,omitempty"`
+	TotalEnergyBurned      EnergyValue `json:"totalEnergyBurned"`
+	ActiveEnergyStats      *Statistics `json:"activeEnergyStats,omitempty"`
+	HeartRateStats         *Statistics `json:"heartRateStats,omitempty"`
 	HeartRateRecoveryStats *Statistics `json:"heartRateRecoveryStats,omitempty"`
-	StepCountStats      *Statistics `json:"stepCountStats,omitempty"`
+	StepCountStats         *Statistics `json:"stepCountStats,omitempty"`
 
 	// Data point counts (so AI knows what detail files exist)
 	ActiveEnergyCount       int `json:"activeEnergyCount"`
 	HeartRateDataCount      int `json:"heartRateDataCount"`
 	HeartRateRecoveryCount  int `json:"heartRateRecoveryCount"`
 	StepCountDataCount      int `json:"stepCountDataCount"`
+	DistanceDataCount       int `json:"distanceDataCount"`
 
 	// Metadata
 	Metadata interface{} `json:"metadata,omitempty"`
