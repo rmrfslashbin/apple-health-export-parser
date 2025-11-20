@@ -79,12 +79,14 @@ apple-health-export-parser process [flags]
 
 **Flags:**
 ```
--s, --source string              Source JSON file to process (required)
--e, --export string              Directory to export processed data (default "exports")
--c, --collections strings        Target collections for MCP import (comma-separated)
-    --batch-size-workouts int    Batch size for workout records (default 20)
-    --batch-size-som int         Batch size for state of mind records (default 20)
-    --batch-size-metrics int     Batch size for metric records (default 10)
+-s, --source string                 Source JSON file to process (required)
+-e, --export string                 Directory to export processed data (default "exports")
+-c, --collections strings           Target collections for MCP import (comma-separated)
+    --batch-size-workouts int       Batch size for workout records (default 20)
+    --batch-size-som int            Batch size for state of mind records (default 20)
+    --batch-size-metrics int        Batch size for metric records (default 10)
+    --generate-import-script        Generate executable import.sh script (default false)
+    --memory-binary string          Path to memory CLI binary (default "memory")
 ```
 
 **Examples:**
@@ -134,6 +136,21 @@ apple-health-export-parser process \
   --log-output ./logs/
 ```
 
+Process and generate MCP Memory import script:
+```bash
+apple-health-export-parser process \
+  --source HealthAutoExport-2024-08-01.json \
+  --collections spinal_fusion_recovery \
+  --generate-import-script
+```
+
+This generates an executable `import.sh` script in the export directory that uses the Memory MCP CLI to import all batches:
+
+```bash
+cd exports/2024-08-01/import
+./import.sh  # Imports all batches using 'memory tools run'
+```
+
 ### Version Command
 
 Display detailed version information:
@@ -179,6 +196,9 @@ exports/
 │   ├── batch_2_state_of_mind.json
 │   ├── batch_1_metrics.json
 │   ├── batch_summary.json
+│   ├── import.sh               # Generated if --generate-import-script is used
+│   ├── import.log              # Created when import.sh runs
+│   ├── import_errors.log       # Created if import.sh encounters errors
 │   └── ...
 ├── metrics/
 │   ├── YYYY-MM-DD_HH-MM-SS_metric_name.json
@@ -206,6 +226,45 @@ The `import/` directory contains batch files ready for import into the MCP Memor
 - **Batch Files**: JSON arrays of memory objects formatted for direct MCP import
 - **Collections Field**: Each memory includes the target collection(s) specified via `--collections` flag
 - **Batch Summary**: `batch_summary.json` provides an overview of all generated batches
+- **Import Script**: `import.sh` (if `--generate-import-script` is used) - executable script that uses the Memory MCP CLI to import all batches automatically
+
+#### Using the Import Script
+
+When you use `--generate-import-script`, the tool creates an executable `import.sh` script that:
+
+1. Validates the Memory CLI binary is available
+2. Imports all batches using `memory tools run --tool memory_memory_create`
+3. Logs all operations to `import.log`
+4. Logs any errors to `import_errors.log`
+5. Provides a summary of imported batches and records
+
+**To use the import script:**
+
+```bash
+# Generate batches with import script
+apple-health-export-parser process \
+  --source HealthAutoExport-2024-08-01.json \
+  --collections spinal_fusion_recovery \
+  --generate-import-script
+
+# Navigate to import directory
+cd exports/2024-08-01/import
+
+# Run the import script
+./import.sh
+```
+
+**Custom Memory binary path:**
+
+If the Memory CLI binary is not in your PATH, specify its location:
+
+```bash
+apple-health-export-parser process \
+  --source HealthAutoExport-2024-08-01.json \
+  --collections spinal_fusion_recovery \
+  --generate-import-script \
+  --memory-binary /path/to/memory
+```
 
 **Batch Summary Format:**
 ```json

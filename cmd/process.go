@@ -22,6 +22,8 @@ var (
 	batchSizeWorkouts  int
 	batchSizeSOM       int
 	batchSizeMetrics   int
+	generateImportScript bool
+	memoryBinaryPath   string
 )
 
 // processCmd represents the process command
@@ -57,6 +59,10 @@ func init() {
 	processCmd.Flags().IntVar(&batchSizeSOM, "batch-size-som", 20, "batch size for state of mind records")
 	processCmd.Flags().IntVar(&batchSizeMetrics, "batch-size-metrics", 10, "batch size for metric records")
 
+	// Import script generation
+	processCmd.Flags().BoolVar(&generateImportScript, "generate-import-script", false, "generate MCP Memory import script (import.sh)")
+	processCmd.Flags().StringVar(&memoryBinaryPath, "memory-binary", "memory", "path to memory CLI binary (default: memory in PATH)")
+
 	// Mark required flags
 	processCmd.MarkFlagRequired("source")
 
@@ -67,6 +73,8 @@ func init() {
 	viper.BindPFlag("batch-size-workouts", processCmd.Flags().Lookup("batch-size-workouts"))
 	viper.BindPFlag("batch-size-som", processCmd.Flags().Lookup("batch-size-som"))
 	viper.BindPFlag("batch-size-metrics", processCmd.Flags().Lookup("batch-size-metrics"))
+	viper.BindPFlag("generate-import-script", processCmd.Flags().Lookup("generate-import-script"))
+	viper.BindPFlag("memory-binary", processCmd.Flags().Lookup("memory-binary"))
 }
 
 // runProcess executes the process command
@@ -702,6 +710,15 @@ func generateImportBatches(data Data, exportDir string) error {
 		slog.Warn("Failed to generate batch summary", "error", err)
 	}
 
+	// Generate import script if requested
+	if generateImportScript {
+		if err := generateMCPImportScript(batchStats, importDir); err != nil {
+			slog.Warn("Failed to generate import script", "error", err)
+		} else {
+			slog.Info("Generated import script", "path", filepath.Join(importDir, "import.sh"))
+		}
+	}
+
 	slog.Info("Import batch generation complete",
 		"total_batches", batchStats.WorkoutBatches+batchStats.StateOfMindBatches+batchStats.MetricBatches,
 		"total_records", batchStats.TotalRecords)
@@ -1113,5 +1130,126 @@ func generateBatchSummary(summary BatchSummary, importDir string) error {
 	}
 
 	slog.Info("Generated batch summary", "file", summaryFile)
+	return nil
+}
+
+// generateMCPImportScript creates a shell script to import all batches using the Memory MCP CLI.
+func generateMCPImportScript(summary BatchSummary, importDir string) error {
+	var script strings.Builder
+
+	// Script header
+	script.WriteString("#!/bin/bash\n")
+	script.WriteString("# Auto-generated MCP Memory import script\n")
+	script.WriteString(fmt.Sprintf("# Generated: %s\n", summary.Timestamp.Format(time.RFC3339)))
+	script.WriteString(fmt.Sprintf("# Total Records: %d\n", summary.TotalRecords))
+	script.WriteString(fmt.Sprintf("# Target Collections: %s\n", strings.Join(summary.TargetCollections, ", ")))
+	script.WriteString("#\n")
+	script.WriteString("# Usage: ./import.sh\n")
+	script.WriteString("#\n")
+	script.WriteString("# This script uses the Memory MCP CLI to import Apple Health data.\n")
+	script.WriteString("# Ensure the 'memory' binary is in your PATH or specify with MEMORY_BIN.\n")
+	script.WriteString("#\n\n")
+
+	// Configuration
+	script.WriteString("set -euo pipefail  # Exit on error, undefined vars, pipe failures\n\n")
+	script.WriteString("# Configuration\n")
+	script.WriteString(fmt.Sprintf("MEMORY_BIN=\"%s\"\n", memoryBinaryPath))
+	script.WriteString("SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n")
+	script.WriteString("LOG_FILE=\"${SCRIPT_DIR}/import.log\"\n")
+	script.WriteString("ERROR_LOG=\"${SCRIPT_DIR}/import_errors.log\"\n\n")
+
+	// Helper functions
+	script.WriteString("# Helper functions\n")
+	script.WriteString("log() { echo \"[$(date +'%Y-%m-%d %H:%M:%S')] $*\" | tee -a \"${LOG_FILE}\"; }\n")
+	script.WriteString("error() { echo \"[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $*\" | tee -a \"${LOG_FILE}\" \"${ERROR_LOG}\" >&2; }\n\n")
+
+	// Verification
+	script.WriteString("# Verify memory binary exists\n")
+	script.WriteString("if ! command -v \"${MEMORY_BIN}\" &> /dev/null; then\n")
+	script.WriteString("    error \"Memory binary '${MEMORY_BIN}' not found in PATH\"\n")
+	script.WriteString("    error \"Install memory or set MEMORY_BIN environment variable\"\n")
+	script.WriteString("    exit 1\n")
+	script.WriteString("fi\n\n")
+
+	// Start import
+	script.WriteString("log \"Starting MCP Memory import\"\n")
+	script.WriteString(fmt.Sprintf("log \"Total batches: %d\"\n", summary.WorkoutBatches+summary.StateOfMindBatches+summary.MetricBatches))
+	script.WriteString(fmt.Sprintf("log \"Total records: %d\"\n\n", summary.TotalRecords))
+
+	// Track statistics
+	script.WriteString("# Import statistics\n")
+	script.WriteString("TOTAL_IMPORTED=0\n")
+	script.WriteString("TOTAL_FAILED=0\n\n")
+
+	// Import function
+	script.WriteString("# Import a batch file\n")
+	script.WriteString("import_batch() {\n")
+	script.WriteString("    local batch_file=\"$1\"\n")
+	script.WriteString("    local batch_name=$(basename \"${batch_file}\")\n")
+	script.WriteString("    \n")
+	script.WriteString("    log \"Importing ${batch_name}...\"\n")
+	script.WriteString("    \n")
+	script.WriteString("    if \"${MEMORY_BIN}\" tools run --tool memory_memory_create --input \"${batch_file}\" >> \"${LOG_FILE}\" 2>> \"${ERROR_LOG}\"; then\n")
+	script.WriteString("        log \"✓ Successfully imported ${batch_name}\"\n")
+	script.WriteString("        ((TOTAL_IMPORTED++))\n")
+	script.WriteString("        return 0\n")
+	script.WriteString("    else\n")
+	script.WriteString("        error \"✗ Failed to import ${batch_name}\"\n")
+	script.WriteString("        ((TOTAL_FAILED++))\n")
+	script.WriteString("        return 1\n")
+	script.WriteString("    fi\n")
+	script.WriteString("}\n\n")
+
+	// Import workout batches
+	if summary.WorkoutBatches > 0 {
+		script.WriteString(fmt.Sprintf("# Import workout batches (%d batches, %d records)\n", summary.WorkoutBatches, summary.WorkoutRecords))
+		script.WriteString("log \"Importing workout batches...\"\n")
+		for i := 1; i <= summary.WorkoutBatches; i++ {
+			script.WriteString(fmt.Sprintf("import_batch \"${SCRIPT_DIR}/batch_%d_workouts.json\"\n", i))
+		}
+		script.WriteString("\n")
+	}
+
+	// Import state of mind batches
+	if summary.StateOfMindBatches > 0 {
+		script.WriteString(fmt.Sprintf("# Import state of mind batches (%d batches, %d records)\n", summary.StateOfMindBatches, summary.StateOfMindRecords))
+		script.WriteString("log \"Importing state of mind batches...\"\n")
+		for i := 1; i <= summary.StateOfMindBatches; i++ {
+			script.WriteString(fmt.Sprintf("import_batch \"${SCRIPT_DIR}/batch_%d_state_of_mind.json\"\n", i))
+		}
+		script.WriteString("\n")
+	}
+
+	// Import metric batches
+	if summary.MetricBatches > 0 {
+		script.WriteString(fmt.Sprintf("# Import metric batches (%d batches, %d records)\n", summary.MetricBatches, summary.MetricRecords))
+		script.WriteString("log \"Importing metric batches...\"\n")
+		for i := 1; i <= summary.MetricBatches; i++ {
+			script.WriteString(fmt.Sprintf("import_batch \"${SCRIPT_DIR}/batch_%d_metrics.json\"\n", i))
+		}
+		script.WriteString("\n")
+	}
+
+	// Summary
+	script.WriteString("# Import summary\n")
+	script.WriteString("log \"Import complete\"\n")
+	script.WriteString("log \"Successfully imported: ${TOTAL_IMPORTED} batches\"\n")
+	script.WriteString("log \"Failed imports: ${TOTAL_FAILED} batches\"\n")
+	script.WriteString("log \"Total records: " + fmt.Sprintf("%d", summary.TotalRecords) + "\"\n\n")
+
+	script.WriteString("if [ ${TOTAL_FAILED} -gt 0 ]; then\n")
+	script.WriteString("    error \"Some batches failed to import. Check ${ERROR_LOG} for details.\"\n")
+	script.WriteString("    exit 1\n")
+	script.WriteString("fi\n\n")
+
+	script.WriteString("log \"All batches imported successfully!\"\n")
+	script.WriteString("exit 0\n")
+
+	// Write script to file
+	scriptFile := filepath.Join(importDir, "import.sh")
+	if err := os.WriteFile(scriptFile, []byte(script.String()), 0755); err != nil {
+		return fmt.Errorf("writing import script: %w", err)
+	}
+
 	return nil
 }
